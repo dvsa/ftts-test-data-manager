@@ -1,0 +1,21 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "testDataManagerClientId": {
+            "reference": {
+                "keyVault": {
+                    "id": "/subscriptions/27b2c649-8bae-4911-9755-651f93b1b65b/resourceGroups/dsukspfpfmkvrsg001/providers/Microsoft.KeyVault/vaults/dsukspfpfmkv001"
+                },
+                "secretName": "apimFncClientId",
+                "secretVersion": "d1da6f74fa2c45638b9815189d2186e0"
+            }
+        },
+        "samplingRate": {
+            "value": 100
+        },
+        "environmentTag": {
+            "value": "pf"
+        }
+    }
+}

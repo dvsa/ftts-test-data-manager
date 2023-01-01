@@ -1,0 +1,21 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "testDataManagerAccountTypeTag": {
+            "value": "Non-Production"
+        },
+        "testDataManagerBackupAccountInterval": {
+            "value": 1440
+        },
+        "testDataManagerBackupRetentionInterval": {
+            "value": 8
+        },
+        "useServerlessInstance": {
+            "value": true
+        },
+        "environmentTag": {
+            "value": "dv"
+        }
+    }
+}

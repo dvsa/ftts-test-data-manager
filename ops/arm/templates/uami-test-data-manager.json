@@ -1,0 +1,37 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "testDataManagerSharedUserManagedIdentity": {
+            "type": "bool"
+        },
+        "environmentTag": {
+            "type": "string"
+        },
+        "envNumber": {
+            "type": "string"
+        }
+    },
+    "variables": {
+        "testdmUserManagedIdentityName": "[concat('dsuks', parameters('environmentTag'), 'testdmuim', if(equals(parameters('testDataManagerSharedUserManagedIdentity'), true()), '000', parameters('envNumber')))]",
+        "serviceTag": "ds",
+        "regionTag": "uks",
+        "functionTag": "testdm",
+        "componentTag": "uim"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+            "name": "[variables('testdmUserManagedIdentityName')]",
+            "apiVersion": "2018-11-30",
+            "location": "[resourceGroup().location]",
+            "tags": {
+                "Service": "[variables('serviceTag')]",
+                "Region": "[variables('regionTag')]",
+                "Environment": "[parameters('environmentTag')]",
+                "Function": "[variables('functionTag')]",
+                "Component": "[variables('componentTag')]"
+            }
+        }
+    ]
+}

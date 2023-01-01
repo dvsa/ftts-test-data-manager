@@ -1,0 +1,79 @@
+<policies>
+    <inbound>
+        <base />
+        <validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized. Access token is missing or invalid." require-scheme="Bearer" clock-skew="10" output-token-variable-name="securityToken">
+            <openid-config url="{{openIdUrl}}" />
+            <audiences>
+                <audience>{{testDataManagerAudience}}</audience>
+            </audiences>
+        </validate-jwt>
+        <rate-limit-by-key calls="100" renewal-period="1" counter-key="@(context.Api.Name)"/>
+        <set-header name="x-auth-roles" exists-action="override">
+            <value>@{
+            return ((Jwt)context.Variables["securityToken"]).Claims.GetValueOrDefault("roles", "");
+            }</value>
+        </set-header>
+        <set-header name="Authorization" exists-action="delete" />
+        <authentication-managed-identity resource="{{testDataManagerClientId}}" />
+        <set-header name="Ocp-Apim-Subscription-Key" exists-action="delete" />
+        <set-header name="request-context" exists-action="skip">
+            <value />
+        </set-header>
+        <set-header name="appId" exists-action="skip">
+            <value />
+        </set-header>
+        <set-header name="request-id" exists-action="skip">
+            <value />
+        </set-header>
+        <set-header name="x-ms-request-id" exists-action="skip">
+            <value />
+        </set-header>
+        <set-header name="x-ms-request-root-id" exists-action="skip">
+            <value />
+        </set-header>
+        <set-header name="correlation-context" exists-action="skip">
+            <value />
+        </set-header>
+        <set-header name="traceparent" exists-action="skip">
+            <value />
+        </set-header>
+        <set-header name="tracestate" exists-action="skip">
+            <value />
+        </set-header>
+    </inbound>
+    <backend>
+        <base />
+    </backend>
+    <outbound>
+        <base />
+        <set-variable name="contentType" value="@(context.Response.Headers.ContainsKey("Content-Type") ? context.Response.Headers["Content-Type"].First().Split(';')[0] : "")" />
+        <set-variable name="contentTypeCheck" value="@(((string)context.Variables["contentType"]).Contains("application/json"))" />
+        <set-variable name="statusCodeCheck" value="@(context.Response.StatusCode.Equals(401) || context.Response.StatusCode.Equals(403) || context.Response.StatusCode.Equals(500) || context.Response.StatusCode.Equals(503))" />
+        <set-variable name="statusCodeCheck404" value="@(context.Response.StatusCode.Equals(404))" />
+        <choose>
+            <when condition="@(!context.Variables.GetValueOrDefault<bool>("contentTypeCheck") && context.Variables.GetValueOrDefault<bool>("statusCodeCheck"))">
+                <set-variable name="eResponse" value="@("{ \"message\": \"Invalid response from the server\", \"content-type\":" + " " + "\"" + (context.Variables.GetValueOrDefault("contentType", "null")) + "\"" + ", \"code\":" + " " + (context.Response.StatusCode) + " }")" />
+                <return-response>
+                    <set-status code="500" reason="Invalid response from server" />
+                    <set-header name="Content-Type" exists-action="override">
+                        <value>application/json</value>
+                    </set-header>
+                    <set-body>@($"{(string)context.Variables["eResponse"]}")</set-body>
+                </return-response>
+            </when>
+            <when condition="@(!context.Variables.GetValueOrDefault<bool>("contentTypeCheck") && context.Variables.GetValueOrDefault<bool>("statusCodeCheck404"))">
+                <set-variable name="eResponse" value="@("{ \"message\": \"Not found\", \"content-type\":" + " " + "\"" + (context.Variables.GetValueOrDefault("contentType", "null")) + "\"" + ", \"code\":" + " " + (context.Response.StatusCode) + " }")" />
+                <return-response>
+                    <set-status code="404" reason="Not found" />
+                    <set-header name="Content-Type" exists-action="override">
+                        <value>application/json</value>
+                    </set-header>
+                    <set-body>@($"{(string)context.Variables["eResponse"]}")</set-body>
+                </return-response>
+            </when>
+        </choose>
+    </outbound>
+    <on-error>
+        <base />
+    </on-error>
+</policies>

@@ -1,0 +1,77 @@
+{
+  "name": "ftts-test-data-manager",
+  "version": "1.0.0",
+  "description": "Manages the test data for the performance test environment",
+  "main": "index.js",
+  "scripts": {
+    "build": "rimraf dist && tsc",
+    "coverage-ci": "jest --coverage --reporters=jest-junit --reporters=jest-standard-reporter --ci",
+    "func:start": "npm run build && func extensions install && func start --port 7002",
+    "lint": "eslint --fix --ext .js,.ts .",
+    "lint:report": "eslint --ext .js,.ts . -f json -o lint/report.json",
+    "prepare": "husky install",
+    "sonar-scanner": "sonar-scanner -Dproject.settings=./sonar-scanner.properties -Dsonar.projectBaseDir='' ",
+    "sonar": "npm run test:coverage && npm run lint:report && npm run sonar-scanner",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --verbose --coverage"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@ssh.dev.azure.com:v3/DvsaDev/ftts-beta/ftts-test-data-manager"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@azure/functions": "3.2.0",
+    "@dvsa/azure-logger": "5.2.0",
+    "@dvsa/egress-filtering": "4.0.2"
+  },
+  "devDependencies": {
+    "@babel/core": "7.15.8",
+    "@babel/plugin-proposal-class-properties": "7.14.5",
+    "@babel/plugin-proposal-decorators": "7.15.8",
+    "@babel/preset-env": "7.15.8",
+    "@babel/preset-typescript": "7.15.0",
+    "@dvsa/eslint-config-ts": "3.0.0",
+    "@types/jest": "29.2.0",
+    "@types/node": "18.11.2",
+    "babel-jest": "29.3.1",
+    "husky": "8.0.1",
+    "jest": "27.5.1",
+    "jest-junit": "14.0.1",
+    "jest-standard-reporter": "2.0.0",
+    "rimraf": "3.0.2",
+    "ts-jest": "27.0.3",
+    "typescript": "4.8.4"
+  },
+  "husky": {
+    "hooks": {
+      "pre-push": "npm run test"
+    }
+  },
+  "jest": {
+    "coverageDirectory": "<rootDir>/coverage",
+    "coverageReporters": [
+      "text",
+      "html",
+      "lcov"
+    ],
+    "coveragePathIgnorePatterns": [
+      "<rootDir>/tests"
+    ],
+    "collectCoverageFrom": [
+      "src/**/*.{ts,tsx,js}"
+    ],
+    "moduleFileExtensions": [
+      "ts",
+      "tsx",
+      "js"
+    ],
+    "testRegex": "./tests/.*.test.ts$",
+    "rootDir": ".",
+    "setupFiles": [
+      "<rootDir>/tests/mocks/setup-jest.ts"
+    ]
+  }
+}

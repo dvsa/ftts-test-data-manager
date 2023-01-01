@@ -1,0 +1,84 @@
+trigger:
+  - none
+
+parameters:
+- name: envNumber
+  displayName: Dev environment number
+  type: string
+  default: '001'
+  values:
+  - '001'
+  - '002'
+  - '003'
+  - '004'
+  - '005'
+  - '006'
+  - '007'
+  - '008'
+  - '009'
+  - '010'
+  - '011'
+  - '012'
+  - '013'
+  - '014'
+  - '015'
+  - '016'
+  - '017'
+  - '018'
+  - '019'
+  - '020'
+
+# - name: runTests
+#   displayName: Run Tests? (where applicable)
+#   type: boolean
+#   default: false
+
+resources:
+  pipelines:
+  - pipeline: app-build-test-data-manager
+    project: ftts-beta
+    source: FTTS-test-data-manager-build-pipeline
+    trigger:
+      branches:
+        include:
+          - refs/heads/develop
+
+variables:
+  System.Debug: false
+
+stages:
+- stage: 'Dev'
+  displayName: 'Dev'
+  condition: |
+        and(or(startsWith(variables['resources.pipeline.app-build-test-data-manager.sourceBranch'], 'refs/pull/'),
+        startsWith(variables['resources.pipeline.app-build-test-data-manager.sourceBranch'], 'refs/heads/feature/'),
+        startsWith(variables['resources.pipeline.app-build-test-data-manager.sourceBranch'], 'refs/heads/develop'),
+        startsWith(variables['resources.pipeline.app-build-test-data-manager.sourceBranch'], 'refs/heads/release/')),
+        eq(variables['Build.Reason'], 'Manual'))
+  jobs:
+  - template: ./test-data-manager-deploy.yml
+    parameters:
+      env: dv
+      envNumber: ${{ parameters.envNumber }}
+      environment: Dev
+      subscriptionName: FTTS Dev
+  # - ${{ if eq(parameters.runTests, true) }}:
+  #   - template: ./test-data-manager-integration-tests.yml
+  #     parameters:
+  #       env: dv
+  #       envNumber: ${{ parameters.envNumber }}
+
+- stage: 'Perf'
+  displayName: 'Performance'
+  dependsOn: Dev
+  condition: |
+        or(startsWith(variables['resources.pipeline.app-build-test-data-manager.sourceBranch'], 'refs/heads/develop'),
+        startsWith(variables['resources.pipeline.app-build-test-data-manager.sourceBranch'], 'refs/heads/feature/'),
+        startsWith(variables['resources.pipeline.app-build-test-data-manager.sourceBranch'], 'refs/heads/release/'))
+  jobs:
+  - template: ./test-data-manager-deploy.yml
+    parameters:
+      env: pf
+      envNumber: '001'
+      environment: Performance
+      subscriptionName: FTTS Dev

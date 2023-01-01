@@ -1,0 +1,24 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-08-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "testDataManagerStorageAccountType": {
+            "value": "Standard_LRS"
+        },
+        "testDataManagerAadAuthClientID": {
+            "reference": {
+                "keyVault": {
+                    "id": "/subscriptions/27b2c649-8bae-4911-9755-651f93b1b65b/resourceGroups/dsuksdvpfmkvrsg001/providers/Microsoft.KeyVault/vaults/dsuksdvpfmkv001"
+                },
+                "secretName": "apimFncClientId",
+                "secretVersion": "b535d2004bc548b8876b43065034d096"
+            }
+        },
+        "logLevel": {
+            "value": "dependency"
+        },
+        "environmentTag": {
+            "value": "dv"
+        }
+    }
+}

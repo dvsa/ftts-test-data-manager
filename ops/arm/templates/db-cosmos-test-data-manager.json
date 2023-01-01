@@ -1,0 +1,170 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "testDataManagerAccountTypeTag": {
+            "type": "string",
+            "metadata": {
+                "description": "Environment tag for storage account type, set to Non-Production, Production etc."
+            }
+        },
+        "testDataManagerBackupAccountInterval": {
+            "type": "int",
+            "metadata": {
+                "description": "Interval time in minutes between back-ups."
+            }
+        },
+        "testDataManagerBackupRetentionInterval": {
+            "type": "int",
+            "metadata": {
+                "description": "Time in hours that each backup is retained."
+            }
+        },
+        "testDataManagerDatabaseMaxThroughput": {
+            "type": "int",
+            "defaultValue": 4000,
+            "metadata": {
+                "description": "Maximum Request Units per second"
+            }
+        },
+        "useServerlessInstance": {
+            "type": "bool",
+            "defaultValue": false
+        },
+        "environmentTag": {
+            "type": "string"
+        },
+        "envNumber": {
+            "type": "string"
+        }
+    },
+    "variables": {
+        "testDataManagerDatabaseName": "[concat('testdatamanager-', parameters('environmentTag'))]",
+        "testDataManagerDbAccountName": "[concat('dsuks', parameters('environmentTag'), 'testdmdatastore', parameters('envNumber'))]",
+        "sqlDbOptionsObject": {
+            "maxThroughput": "[parameters('testDataManagerDatabaseMaxThroughput')]"
+        },
+        "serviceTag": "ds",
+        "regionTag": "uks",
+        "functionTag": "testdm",
+        "componentTag": "db",
+        "capabilitySets": {
+            "default": [],
+            "serverless": [
+                {
+                    "name": "EnableServerless"
+                }
+            ]
+        }
+    },
+    "resources": [
+        {
+            "type": "Microsoft.DocumentDB/databaseAccounts",
+            "name": "[variables('testDataManagerDbAccountName')]",
+            "apiVersion": "2020-06-01-preview",
+            "kind": "GlobalDocumentDB",
+            "location": "[resourceGroup().location]",
+            "tags": {
+                "component": "[variables('componentTag')]",
+                "environment": "[parameters('environmentTag')]",
+                "function": "[variables('functionTag')]",
+                "region": "[variables('regionTag')]",
+                "service": "[variables('serviceTag')]",
+                "defaultExperience": "Core (SQL)",
+                "cosmosAccountType": "[parameters('testDataManagerAccountTypeTag')]"
+            },
+            "properties": {
+                "consistencyPolicy": {
+                    "defaultConsistencyLevel": "Eventual"
+                },
+                "locations": [
+                    {
+                        "locationName": "[resourceGroup().location]",
+                        "isZoneRedundant": true
+                    }
+                ],
+                "databaseAccountOfferType": "Standard",
+                "createMode": "Default",
+                "disableKeyBasedMetadataWriteAccess": true,
+                "backupPolicy": {
+                    "type": "Periodic",
+                    "periodicModeProperties": {
+                        "backupIntervalInMinutes": "[parameters('testDataManagerBackupAccountInterval')]",
+                        "backupRetentionIntervalInHours": "[parameters('testDataManagerBackupRetentionInterval')]"
+                    }
+                },
+                "capabilities": "[if(equals(parameters('useServerlessInstance'), true()), variables('capabilitySets')['serverless'], variables('capabilitySets')['default'])]"
+            }
+        },
+        {
+            "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases",
+            "name": "[concat(variables('testDataManagerDbAccountName'), '/', variables('testDataManagerDatabaseName'))]",
+            "apiVersion": "2020-06-01-preview",
+            "location": "[resourceGroup().location]",
+            "tags": {
+                "component": "[variables('componentTag')]",
+                "environment": "[parameters('environmentTag')]",
+                "function": "[variables('functionTag')]",
+                "region": "[variables('regionTag')]",
+                "service": "[variables('serviceTag')]",
+                "defaultExperience": "Core (SQL)",
+                "cosmosAccountType": "[parameters('testDataManagerAccountTypeTag')]"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.DocumentDB/databaseAccounts', variables('testDataManagerDbAccountName'))]"
+            ],
+            "properties": {
+                "resource": {
+                    "id": "[variables('testDataManagerDatabaseName')]"
+                },
+                "options": {
+                    "autoscaleSettings": "[if(equals(parameters('useServerlessInstance'), true()), json('null'), variables('sqlDbOptionsObject'))]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
+            "name": "[concat(variables('testDataManagerDbAccountName'), '/', variables('testDataManagerDatabaseName'), '/testdata')]",
+            "apiVersion": "2020-06-01-preview",
+            "dependsOn": [
+                "[resourceId('Microsoft.DocumentDB/databaseAccounts', variables('testDataManagerDbAccountName'))]",
+                "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', variables('testDataManagerDbAccountName'), variables('testDataManagerDatabaseName'))]"
+            ],
+            "properties": {
+                "options": {},
+                "resource": {
+                    "id": "testdata",
+                    "partitionKey": {
+                        "paths": [
+                            "/driverNumber"
+                        ],
+                        "kind": "Hash"
+                    },
+                    "indexingPolicy": {
+                        "indexingMode": "Consistent",
+                        "automatic": false,
+                        "includedPaths": [
+                            {
+                                "path": "/driverNumber/?"
+                            }
+                        ],
+                        "excludedPaths": [
+                            {
+                                "path": "/*"
+                            }
+                        ],
+                        "uniqueKeyPolicy": {
+                            "uniqueKeys": [
+                                {
+                                    "paths": [
+                                        "/driverNumber"
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}

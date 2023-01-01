@@ -1,0 +1,103 @@
+parameters:
+  location: 'UK South'
+
+jobs:
+  - deployment: test_data_manager
+    pool:
+      vmImage: 'ubuntu-20.04'
+      ${{ if eq(parameters.subscriptionName, 'FTTS Dev') }}:
+        demands:
+        - generalUse -equals true
+    displayName: 'Deploying Test Data Manager'
+    environment: ${{ parameters.environment }}
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - script: |
+              git clone -c http.extraheader="AUTHORIZATION: bearer $(System.AccessToken)" --branch "${{replace(variables['Build.SourceBranch'], 'refs/heads/', '')}}" $(Build.Repository.Uri) .
+              echo "Checkout complete."
+            displayName: 'Script: Checkout code'
+          - script: |
+              [ -z "${{ parameters.envNumber }}" ] && echo "The envNumber has to be set!" && exit 1
+              echo "##vso[task.setvariable variable=rgName]dsuks${{ parameters.env }}testdmrsg${{ parameters.envNumber }}"
+              echo "##vso[task.setvariable variable=apimRgName]dsuks${{ parameters.env }}apimrsg001"
+              echo "##vso[task.setvariable variable=apimServiceName]dsuks${{ parameters.env }}apim001"
+              echo "##vso[task.setvariable variable=testDataManagerFunctionAppName]dsuks${{ parameters.env }}testdmfnc${{ parameters.envNumber }}"
+              echo "##vso[task.setvariable variable=testDataManagerStorageName]dsuks${{ parameters.env }}testdmstor${{ parameters.envNumber }}"
+              if [ "${{ parameters.env }}" = "dv" ]; then
+                echo "##vso[task.setvariable variable=testDataManagerUserManagedIdentityName]dsuksdvtestdmuim000"
+                echo "##vso[task.setvariable variable=testDataManagerUserManagedIdentityRgName]dsuksdvtestdmrsg000"
+                echo "##vso[task.setvariable variable=testDataManagerSharedUserManagedIdentity]true"
+              else
+                echo "##vso[task.setvariable variable=testDataManagerUserManagedIdentityName]dsuks${{ parameters.env }}testdmuim${{ parameters.envNumber }}"
+                echo "##vso[task.setvariable variable=testDataManagerUserManagedIdentityRgName]dsuks${{ parameters.env }}testdmrsg${{ parameters.envNumber }}"
+                echo "##vso[task.setvariable variable=testDataManagerSharedUserManagedIdentity]false"
+              fi
+              echo "PreDeploy configuration complete."
+            displayName: 'Script: PreDeploy configuration'
+          - task: AzureResourceGroupDeployment@2
+            displayName: 'Azure ARM Deployment: CosmosDB (Test Data Manager)'
+            inputs:
+              azureSubscription: ${{ parameters.subscriptionName }}
+              resourceGroupName: $(rgName)
+              location: ${{ parameters.location }}
+              csmFile: $(System.DefaultWorkingDirectory)/ops/arm/templates/db-cosmos-test-data-manager.json
+              csmParametersFile: $(System.DefaultWorkingDirectory)/ops/arm/parameters-${{ parameters.env }}/db-cosmos-test-data-manager.parameters.json
+              overrideParameters: -envNumber ${{ parameters.envNumber }}
+          - task: AzureResourceGroupDeployment@2
+            displayName: 'Azure ARM Deployment: User Managed Identity'
+            inputs:
+              azureSubscription: ${{ parameters.subscriptionName }}
+              resourceGroupName: $(testDataManagerUserManagedIdentityRgName)
+              location: ${{ parameters.location }}
+              csmFile: $(System.DefaultWorkingDirectory)/ops/arm/templates/uami-test-data-manager.json
+              csmParametersFile: $(System.DefaultWorkingDirectory)/ops/arm/parameters-${{ parameters.env }}/uami-test-data-manager.parameters.json
+              overrideParameters: -envNumber ${{ parameters.envNumber }} -testDataManagerSharedUserManagedIdentity $(testDataManagerSharedUserManagedIdentity)
+          - task: AzureResourceGroupDeployment@2
+            displayName: 'Azure ARM Deployment: Azure Function (Test Data Manager)'
+            inputs:
+              azureSubscription: ${{ parameters.subscriptionName }}
+              resourceGroupName: $(rgName)
+              location: ${{ parameters.location }}
+              csmFile: $(System.DefaultWorkingDirectory)/ops/arm/templates/function-test-data-manager.json
+              csmParametersFile: $(System.DefaultWorkingDirectory)/ops/arm/parameters-${{ parameters.env }}/function-test-data-manager.parameters.json
+              overrideParameters: -envNumber ${{ parameters.envNumber }} -testDataManagerSharedUserManagedIdentity $(testDataManagerSharedUserManagedIdentity)
+          - task: AzureCLI@2
+            displayName: 'Script: Code package deploy (Test Data Manager)'
+            inputs:
+              azureSubscription: ${{ parameters.subscriptionName }}
+              scriptType: pscore
+              scriptPath: $(System.DefaultWorkingDirectory)/ops/scripts/deploy-function-app-code.ps1
+              arguments: -functionName $(testDataManagerFunctionAppName) -functionStorageName $(testDataManagerStorageName) -resourceGroup $(rgName)
+              workingDirectory: $(Pipeline.Workspace)/app-build-test-data-manager/ftts_test_data_manager/
+          - task: AzureResourceGroupDeployment@2
+            displayName: 'Azure ARM Deployment: APIM (Test Data Manager)'
+            inputs:
+              azureSubscription: ${{ parameters.subscriptionName }}
+              resourceGroupName: $(apimRgName)
+              location: ${{ parameters.location }}
+              csmFile: $(System.DefaultWorkingDirectory)/ops/arm/templates/api-management-test-data-manager.json
+              csmParametersFile: $(System.DefaultWorkingDirectory)/ops/arm/parameters-${{ parameters.env }}/api-management-test-data-manager.parameters.json
+              overrideParameters: '-envNumber ${{ parameters.envNumber }}'
+          - task: AzurePowerShell@5
+            displayName: 'Azure PowerShell: Set APIM Policy (Test Data Manager)'
+            inputs:
+              azureSubscription: ${{ parameters.subscriptionName }}
+              ScriptPath: $(System.DefaultWorkingDirectory)/ops/scripts/apply-apim-policy.ps1
+              ScriptArguments: -serviceName '$(apimServiceName)' -resourceGroup '$(apimRgName)' -apiName '$(testDataManagerFunctionAppName)' -policyFile 'test-data-manager-policy.xml'
+              azurePowerShellVersion: LatestVersion
+              workingDirectory: $(System.DefaultWorkingDirectory)/ops/arm/templates
+          - task: PowerShell@2
+            condition: and(succeeded(), not(canceled()), startsWith(variables['Build.SourceBranch'], 'refs/heads/release/'))
+            displayName: 'Script: Retain Release Build on Success'
+            inputs:
+              failOnStderr: true
+              filePath: $(System.DefaultWorkingDirectory)/ops/scripts/build-retention.ps1
+            env:
+              buildRequestedFor: $(Build.RequestedFor)
+              buildBuildId: $(Build.BuildId)
+              systemDefinitionId: $(System.DefinitionId)
+              systemCollectionUri: $(System.CollectionUri)
+              systemTeamProject: $(System.TeamProject)
+              systemAccessToken: $(System.AccessToken)

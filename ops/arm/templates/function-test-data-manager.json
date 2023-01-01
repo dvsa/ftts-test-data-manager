@@ -1,0 +1,335 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "testDataManagerStorageAccountType": {
+            "type": "string"
+        },
+        "testDataManagerAadAuthClientID": {
+            "type": "securestring"
+        },
+        "enableSoftDelete": {
+            "type": "bool",
+            "defaultValue": false
+        },
+        "softDeleteDays": {
+            "type": "int",
+            "defaultValue": 30
+        },
+        "logLevel": {
+            "type": "string"
+        },
+        "disableSuccessEventLogs": {
+            "type": "bool",
+            "defaultValue": false
+        },
+        "parallelProcessCount": {
+            "type": "int",
+            "defaultValue": 5
+        },
+        "parallelProcessInterval": {
+            "type": "int",
+            "defaultValue": 50
+        },
+        "testDataManagerSharedUserManagedIdentity": {
+            "type": "bool"
+        },
+        "disableEgressFiltering": {
+            "type": "bool",
+            "defaultValue": false
+        },
+        "egressCustomAllowedAddresses": {
+            "type": "string",
+            "defaultValue": "[[]"
+        },
+        "envNumber": {
+            "type": "string"
+        },
+        "environmentTag": {
+            "type": "string"
+        },
+        "tz": {
+            "type": "string",
+            "defaultValue": "Europe/London"
+        }
+    },
+    "variables": {
+        "testDataManagerAppName": "[concat('dsuks', parameters('environmentTag'), 'testdmfnc', parameters('envNumber'))]",
+        "testDataManagerStorageAccountName": "[concat('dsuks', parameters('environmentTag'), 'testdmstor', parameters('envNumber'))]",
+        "applicationInsightsName": "[concat('dsuks', parameters('environmentTag'), 'pfmappinsight001')]",
+        "logRgName": "[concat('dsuks', parameters('environmentTag'), 'pfmlogrsg001')]",
+        "keyVaultResourceGroup": "[concat('dsuks', parameters('environmentTag'), 'pfmkvrsg001')]",
+        "keyVaultName": "[concat('dsuks', parameters('environmentTag'), 'pfmkv001')]",
+        "functionResourceGroup": "[concat('dsuks', parameters('environmentTag'), 'testdmrsg', parameters('envNumber'))]",
+        "storageAccountId": "[concat(resourceGroup().id,'/providers/','Microsoft.Storage/storageAccounts/', variables('testDataManagerStorageAccountName'))]",
+        "apimServiceName": "[concat('dsuks', parameters('environmentTag'), 'apim001')]",
+        "dvlaStubAppName": "[concat('dsuks', parameters('environmentTag'), 'dvlstbfnc', parameters('envNumber'))]",
+        "dvlaStubHost": "[concat('https://', variables('dvlaStubAppName'), '.azurewebsites.net/api/v2/')]",
+        "testDataManagerDatabaseName": "[concat('testdatamanager-', parameters('environmentTag'))]",
+        "testDataManagerDbAccountName": "[concat('dsuks', parameters('environmentTag'), 'testdmdatastore', parameters('envNumber'))]",
+        "testDataManagerCosmosUri": "[concat('https://', variables('testDataManagerDbAccountName'), '.documents.azure.com:443/')]",
+        "testDataManagerCosmosManagementUri": "[concat('https://management.azure.com/subscriptions/', subscription().subscriptionId, '/resourceGroups/dsuks', parameters('environmentTag'), 'testdmrsg', parameters('envNumber'), '/providers/Microsoft.DocumentDb/databaseAccounts/', variables('testDataManagerDbAccountName'))]",
+        "testDataManagerManagedIdentityName": "[concat('dsuks', parameters('environmentTag'), 'testdmuim', if(equals(parameters('testDataManagerSharedUserManagedIdentity'), true()), '000', parameters('envNumber')))]",
+        "testDataManagerManagedIdentityResourceId": "[if(equals(parameters('testDataManagerSharedUserManagedIdentity'), true()), resourceId('dsuksdvtestdmrsg000', 'Microsoft.ManagedIdentity/userAssignedIdentities', variables('testDataManagerManagedIdentityName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('testDataManagerManagedIdentityName')))]",
+        "serviceTag": "ds",
+        "regionTag": "uks",
+        "functionTag": "testdm",
+        "componentTag": "fnc"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2021-02-01",
+            "name": "[variables('testDataManagerStorageAccountName')]",
+            "location": "[resourceGroup().location]",
+            "kind": "StorageV2",
+            "sku": {
+                "name": "[parameters('testDataManagerStorageAccountType')]"
+            },
+            "properties": {
+                "minimumTlsVersion": "TLS1_2",
+                "allowBlobPublicAccess": false
+            },
+            "tags": {
+                "Service": "[variables('serviceTag')]",
+                "Region": "[variables('regionTag')]",
+                "Environment": "[parameters('environmentTag')]",
+                "Function": "[variables('functionTag')]",
+                "Component": "[variables('componentTag')]"
+            }
+        },
+        {
+            "type": "Microsoft.Web/serverfarms",
+            "apiVersion": "2019-08-01",
+            "name": "[variables('testDataManagerAppName')]",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "Y1",
+                "tier": "Dynamic"
+            },
+            "properties": {
+                "name": "[variables('testDataManagerAppName')]",
+                "computeMode": "Dynamic"
+            },
+            "tags": {
+                "Service": "[variables('serviceTag')]",
+                "Region": "[variables('regionTag')]",
+                "Environment": "[parameters('environmentTag')]",
+                "Function": "[variables('functionTag')]",
+                "Component": "[variables('componentTag')]"
+            }
+        },
+        {
+            "apiVersion": "2019-08-01",
+            "type": "Microsoft.Web/sites",
+            "name": "[variables('testDataManagerAppName')]",
+            "location": "[resourceGroup().location]",
+            "kind": "functionapp",
+            "tags": {
+                "Service": "[variables('serviceTag')]",
+                "Region": "[variables('regionTag')]",
+                "Environment": "[parameters('environmentTag')]",
+                "Function": "[variables('functionTag')]",
+                "Component": "[variables('componentTag')]"
+            },
+            "identity": {
+                "type": "SystemAssigned, UserAssigned",
+                "userAssignedIdentities": {
+                    "[variables('testDataManagerManagedIdentityResourceId')]": {}
+                }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', variables('testDataManagerAppName'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('testDataManagerStorageAccountName'))]"
+            ],
+            "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('testDataManagerAppName'))]",
+                "httpsOnly": true,
+                "siteConfig": {
+                    "ftpsState": "Disabled",
+                    "appSettings": [
+                        {
+                            "name": "AzureWebJobsStorage",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('testDataManagerStorageAccountName'), ';AccountKey=', listKeys(variables('storageAccountid'),'2019-04-01').keys[0].value)]"
+                        },
+                        {
+                            "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('testDataManagerStorageAccountName'), ';AccountKey=', listKeys(variables('storageAccountid'),'2019-04-01').keys[0].value)]"
+                        },
+                        {
+                            "name": "FUNCTIONS_EXTENSION_VERSION",
+                            "value": "~4"
+                        },
+                        {
+                            "name": "WEBSITE_NODE_DEFAULT_VERSION",
+                            "value": "~14"
+                        },
+                        {
+                            "name": "AzureFunctionsJobHost__functionTimeout",
+                            "value": "00:10:00"
+                        },
+                        {
+                            "name": "FUNCTION_TIMEOUT_BUFFER_SECONDS",
+                            "value": "30"
+                        },
+                        {
+                            "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                            "value": "[reference(resourceId(variables('logRgName'),'Microsoft.Insights/components', variables('applicationInsightsName')), '2015-05-01', 'Full').properties.InstrumentationKey]"
+                        },
+                        {
+                            "name": "FUNCTIONS_WORKER_RUNTIME",
+                            "value": "node"
+                        },
+                        {
+                            "name": "DVLA_STUB_URL",
+                            "value": "[variables('dvlaStubHost')]"
+                        },
+                        {
+                            "name": "COSMOSDB_CONTAINER_ID_TEST_DATA",
+                            "value": "testdata"
+                        },
+                        {
+                            "name": "COSMOSDB_ACCOUNT_URI",
+                            "value": "[variables('testDataManagerCosmosUri')]"
+                        },
+                        {
+                            "name": "COSMOSDB_DB_ID",
+                            "value": "[variables('testDataManagerDatabaseName')]"
+                        },
+                        {
+                            "name": "COSMOSDB_MANAGEMENT_URI",
+                            "value": "[variables('testDataManagerCosmosManagementUri')]"
+                        },
+                        {
+                            "name": "DISABLE_EGRESS_FILTERING",
+                            "value": "[parameters('disableEgressFiltering')]"
+                        },
+                        {
+                            "name": "EGRESS_CUSTOM_ALLOWED_ADDRESSES",
+                            "value": "[parameters('egressCustomAllowedAddresses')]"
+                        },
+                        {
+                            "name": "NODE_ENV",
+                            "value": "production"
+                        },
+                        {
+                            "name": "LOG_LEVEL",
+                            "value": "[parameters('logLevel')]"
+                        },
+                        {
+                            "name": "DISABLE_SUCCESS_EVENT_LOGS",
+                            "value": "[parameters('disableSuccessEventLogs')]"
+                        },
+                        {
+                            "name": "TZ",
+                            "value": "[parameters('tz')]"
+                        },
+                        {
+                            "name": "AzureWebJobsDisableHomepage",
+                            "value": true
+                        },
+                        {
+                            "name": "USER_ASSIGNED_ENTITY_CLIENT_ID",
+                            "value": "[reference(variables('testDataManagerManagedIdentityResourceId'), '2018-11-30').clientId]"
+                        },
+                        {
+                            "name": "WEBSITE_RUN_FROM_PACKAGE_BLOB_MI_RESOURCE_ID",
+                            "value": "SystemAssigned"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "name": "[concat(variables('testDataManagerAppName'), '/', 'authsettingsV2')]",
+            "type": "Microsoft.Web/sites/config",
+            "apiVersion": "2021-02-01",
+            "properties": {
+                "globalValidation": {
+                    "requireAuthentication": true,
+                    "unauthenticatedClientAction": "Return401"
+                },
+                "identityProviders": {
+                    "azureActiveDirectory": {
+                        "enabled": true,
+                        "registration": {
+                            "clientId": "[parameters('testDataManagerAadAuthClientID')]",
+                            "openIdIssuer": "[concat('https://sts.windows.net/', subscription().tenantId, '/')]"
+                        }
+                    }
+                }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', variables('testDataManagerAppName'))]",
+                "[resourceId('Microsoft.Web/sites', variables('testDataManagerAppName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2020-04-01-preview",
+            "name": "[guid(variables('testDataManagerStorageAccountName'))]",
+            "scope": "[concat('Microsoft.Storage/storageAccounts', '/', variables('testDataManagerStorageAccountName'))]",
+            "dependsOn": [
+                "[variables('testDataManagerStorageAccountName')]"
+            ],
+            "properties": {
+                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')]",
+                "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('testDataManagerAppName')), '2019-08-01', 'Full').identity.principalId]"
+            }
+        },
+        {
+            "type": "Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments",
+            "apiVersion": "2021-06-15",
+            "name": "[concat(variables('testDataManagerDbAccountName'), '/', guid(variables('testDataManagerDatabaseName'), variables('testDataManagerAppName')))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', variables('testDataManagerAppName'))]",
+                "[resourceId('Microsoft.Web/sites', variables('testDataManagerAppName'))]"
+            ],
+            "properties": {
+                "scope": "[concat('/subscriptions/', subscription().subscriptionId, '/resourceGroups/', variables('functionResourceGroup'), '/providers/Microsoft.DocumentDB/databaseAccounts', '/', variables('testDataManagerDbAccountName'))]",
+                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/resourceGroups/', variables('functionResourceGroup'), '/providers/Microsoft.DocumentDB/databaseAccounts/', variables('testDataManagerDbAccountName'), '/sqlRoleDefinitions/00000000-0000-0000-0000-000000000001')]",
+                "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('testDataManagerAppName')), '2019-08-01', 'Full').identity.principalId]"
+            }
+        },
+        {
+            "comments": "Inline deployment",
+            "name": "[concat(variables('testDataManagerAppName'), '-KeyVaultPermission')]",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2019-10-01",
+            "resourceGroup": "[variables('keyVaultResourceGroup')]",
+            "properties": {
+                "mode": "Incremental",
+                "template": {
+                    "$schema": "https://schema.management.azure.com/schemas/2019-08-01/deploymentTemplate.json#",
+                    "contentVersion": "1.0.0.0",
+                    "resources": [
+                        {
+                            "type": "Microsoft.KeyVault/vaults/accessPolicies",
+                            "name": "[concat(variables('keyVaultName'), '/add')]",
+                            "location": "[resourceGroup().location]",
+                            "apiVersion": "2019-09-01",
+                            "properties": {
+                                "accessPolicies": [
+                                    {
+                                        "tenantId": "[reference(resourceId(subscription().subscriptionId, variables('functionResourceGroup'), 'Microsoft.Web/sites', variables('testDataManagerAppName')), '2019-08-01', 'Full').identity.tenantId]",
+                                        "objectId": "[reference(resourceId(subscription().subscriptionId, variables('functionResourceGroup'), 'Microsoft.Web/sites', variables('testDataManagerAppName')), '2019-08-01', 'Full').identity.principalId]",
+                                        "permissions": {
+                                            "keys": [],
+                                            "secrets": [
+                                                "get"
+                                            ],
+                                            "certificates": []
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('testDataManagerAppName'))]"
+            ]
+        }
+    ]
+}

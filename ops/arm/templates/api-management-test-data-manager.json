@@ -1,0 +1,124 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "testDataManagerClientId": {
+            "type": "string"
+        },
+        "samplingRate": {
+            "type": "int"
+        },
+        "envNumber": {
+            "type": "string"
+        },
+        "environmentTag": {
+            "type": "string"
+        }
+    },
+    "variables": {
+        "apimServiceName": "[concat('dsuks', parameters('environmentTag'), 'apim001')]",
+        "host_domain": "[if(contains(createArray('pp','pr'), parameters('environmentTag')), 'dvsa.gov.uk', 'dvsatest-cloud.uk')]",
+        "testDataManagerAppRegUri": "[concat('https://', parameters('environmentTag'), '.tdm.api.ftts.', variables('host_domain'))]",
+        "functionResourceGroup": "[concat('dsuks', parameters('environmentTag'), 'testdmrsg', parameters('envNumber'))]",
+        "testDataManagerAppName": "[concat('dsuks', parameters('environmentTag'), 'testdmfnc', parameters('envNumber'))]",
+        "applicationInsightsName": "[concat('dsuks', parameters('environmentTag'), 'pfmappinsight001')]",
+        "testDataManagerHostName": "[concat('https://', variables('testDataManagerAppName'), '.azurewebsites.net/api')]",
+        "testDataManagerResourceId": "[concat('https://management.azure.com', subscription().id, '/resourceGroups/', variables('functionResourceGroup'), '/providers/Microsoft.Web/sites/', variables('testDataManagerAppName'))]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.ApiManagement/service/namedValues",
+            "apiVersion": "2019-12-01",
+            "name": "[concat(variables('apimServiceName'), '/', 'testDataManagerClientId')]",
+            "properties": {
+                "secret": true,
+                "displayName": "testDataManagerClientId",
+                "value": "[parameters('testDataManagerClientId')]"
+            }
+        },
+        {
+            "type": "Microsoft.ApiManagement/service/namedValues",
+            "apiVersion": "2019-12-01",
+            "name": "[concat(variables('apimServiceName'), '/', 'testDataManagerAudience')]",
+            "properties": {
+                "secret": true,
+                "displayName": "testDataManagerAudience",
+                "value": "[variables('testDataManagerAppRegUri')]"
+            }
+        },
+        {
+            "type": "Microsoft.ApiManagement/service/apis",
+            "apiVersion": "2019-01-01",
+            "name": "[concat(variables('apimServiceName'), '/', variables('testDataManagerAppName'))]",
+            "properties": {
+                "displayName": "[variables('testDataManagerAppName')]",
+                "apiRevision": "1",
+                "subscriptionRequired": false,
+                "path": "[if(not(equals(parameters('environmentTag'), 'dv')), 'testdatamanager', variables('testDataManagerAppName'))]",
+                "protocols": [
+                    "https"
+                ],
+                "isCurrent": true
+            }
+        },
+        {
+            "type": "Microsoft.ApiManagement/service/backends",
+            "name": "[concat(variables('apimServiceName'), '/', variables('testDataManagerAppName'))]",
+            "apiVersion": "2019-01-01",
+            "properties": {
+                "displayName": "[variables('testDataManagerAppName')]",
+                "description": "[variables('testDataManagerAppName')]",
+                "url": "[variables('testDataManagerHostName')]",
+                "protocol": "http",
+                "resourceId": "[variables('testDataManagerResourceId')]"
+            }
+        },
+        {
+            "type": "Microsoft.ApiManagement/service/apis/operations",
+            "apiVersion": "2019-01-01",
+            "name": "[concat(variables('apimServiceName'), '/', variables('testDataManagerAppName'), '/post-proxy')]",
+            "properties": {
+                "displayName": "post-proxy",
+                "method": "POST",
+                "urlTemplate": "/*",
+                "templateParameters": [],
+                "responses": []
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.ApiManagement/service/apis', variables('apimServiceName'), variables('testDataManagerAppName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.ApiManagement/service/apis/operations/policies",
+            "apiVersion": "2019-01-01",
+            "name": "[concat(variables('apimServiceName'), '/', variables('testDataManagerAppName'), '/post-proxy/policy')]",
+            "properties": {
+                "value": "[concat('<policies>\r\n  <inbound>\r\n    <base />\r\n    <set-backend-service id=\"apim-generated-policy\" backend-id=\"', variables('testDataManagerAppName'), '\" />\r\n  </inbound>\r\n  <backend>\r\n    <base />\r\n  </backend>\r\n  <outbound>\r\n    <base />\r\n  </outbound>\r\n  <on-error>\r\n    <base />\r\n  </on-error>\r\n</policies>')]",
+                "format": "xml"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.ApiManagement/service/apis/operations', variables('apimServiceName'), variables('testDataManagerAppName'), 'post-proxy')]",
+                "[resourceId('Microsoft.ApiManagement/service/apis', variables('apimServiceName'), variables('testDataManagerAppName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.ApiManagement/service/apis/diagnostics",
+            "name": "[concat(variables('ApimServiceName'), '/', variables('testDataManagerAppName'), '/applicationinsights')]",
+            "apiVersion": "2019-12-01",
+            "properties": {
+                "alwaysLog": "allErrors",
+                "loggerId": "[resourceId('Microsoft.ApiManagement/service/loggers', variables('ApimServiceName'), variables('applicationInsightsName'))]",
+                "sampling": {
+                    "samplingType": "fixed",
+                    "percentage": "[parameters('samplingRate')]"
+                },
+                "httpCorrelationProtocol": "W3C",
+                "verbosity": "information"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.ApiManagement/service/apis', variables('apimServiceName'), variables('testDataManagerAppName'))]"
+            ]
+        }
+    ],
+    "outputs": {}
+}
